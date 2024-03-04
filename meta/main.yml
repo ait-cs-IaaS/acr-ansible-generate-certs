@@ -1,0 +1,12 @@
+---
+galaxy_info:
+    author: Lenhard Reuter
+    description: Generates certs and respective keys.
+    company: Austrian Institute of Technology (AIT)
+
+    license: GPL-3.0
+    min_ansible_version: '2.1'
+
+    galaxy_tags:
+        - ubuntu
+        - certs

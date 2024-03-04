@@ -1,0 +1,95 @@
+---
+- name: Append cert defaults according to type
+  ansible.builtin.set_fact:
+      _certificates:
+          "{{ certificates | append_cert_defaults(ca_base_path, {'pw': ca_pw,
+          'key': ca_key, 'cert': ca_cert}) }}"
+
+- name: Create certificate directories
+  ansible.builtin.file:
+      name: '{{ cert.path | dirname }}'
+      state: directory
+      recurse: true
+  loop: '{{ _certificates | default([]) }}'
+  loop_control:
+      loop_var: cert
+
+- name: Generate private keys
+  community.crypto.openssl_privatekey:
+      path: '{{ cert.path }}.key'
+      passphrase: '{{ cert.password | default(omit) }}'
+      cipher: '{{ cert.cipher | default(omit) }}'
+  loop: '{{ _certificates | default([]) }}'
+  loop_control:
+      loop_var: cert
+
+- name: Generate certificate signing requests
+  community.crypto.openssl_csr:
+      use_common_name_for_san: true
+      path: '{{ cert.path }}.csr'
+      privatekey_path: '{{ cert.path }}.key'
+      privatekey_passphrase: '{{ cert.password | default(omit) }}'
+      country_name: '{{ cert.country | default(omit) }}'
+      state_or_province_name: '{{ cert.state | default(omit) }}'
+      locality_name: '{{ cert.locality | default(omit) }}'
+      organization_name: '{{ cert.organization | default(omit) }}'
+      organizational_unit_name: '{{ cert.organization_unit | default(omit) }}'
+      email_address: '{{ cert.email | default(omit) }}'
+      subject_alt_name: '{{ cert.subject_alt_name | default(omit) }}'
+      basic_constraints: '{{ cert.basic_constraints | default(omit) }}'
+      # we at least need a common name
+      common_name: '{{ cert.common_name }}'
+  loop: '{{ _certificates | default([]) }}'
+  loop_control:
+      loop_var: cert
+
+- name: Check for already existing certificates
+  ansible.builtin.stat:
+      path: '{{ cert.path }}.crt'
+  loop: '{{ _certificates | default([]) }}'
+  loop_control:
+      loop_var: cert
+  register: file_check
+
+- name: Check state of currently existing certificates
+  community.crypto.x509_certificate_info:
+      path: '{{ fcheck.cert.path }}.crt'
+      valid_at:
+          check: '{{ ca_check_valid_till }}'
+  loop: '{{ file_check.results }}'
+  loop_control:
+      loop_var: fcheck
+  register: certificate_check
+  when: fcheck.stat.exists
+
+- name: Delete about to expire certificate
+  when:
+      not (validity_check.skipped is defined and validity_check.skipped) and not
+      validity_check.valid_at.check
+  ansible.builtin.file:
+      name: '{{ cert.path }}.crt'
+      state: absent
+  loop: '{{ certificate_check.results }}'
+  loop_control:
+      loop_var: validity_check
+
+- name: Sign certificate
+  community.crypto.x509_certificate:
+      path: '{{ cert.path }}.crt'
+      csr_path: '{{ cert.path }}.csr'
+      provider: '{{ cert.provider | default(omit) }}'
+      # selfsigned
+      privatekey_path: '{{ cert.path }}.key'
+      privatekey_passphrase: '{{ cert.privatekey_passphrase | default(omit) }}'
+      selfsigned_not_before: '{{ cert.selfsigned_not_before | default(omit) }}'
+      selfsigned_not_after: '{{ cert.selfsigned_not_after | default(omit) }}'
+      # signed
+      ownca_path: '{{ cert.ownca_path | default(omit) }}'
+      ownca_privatekey_path: '{{ cert.ownca_privatekey_path | default(omit) }}'
+      ownca_privatekey_passphrase:
+          '{{ cert.ownca_privatekey_passphrase | default(omit) }}'
+      ownca_not_before: '{{ cert.ownca_not_before | default(omit) }}'
+      ownca_not_after: '{{ cert.ownca_not_after | default(omit) }}'
+  loop: '{{ _certificates | default([]) }}'
+  loop_control:
+      loop_var: cert
