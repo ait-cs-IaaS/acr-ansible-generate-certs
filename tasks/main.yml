@@ -14,14 +14,23 @@
   loop_control:
     loop_var: cert
 
-- name: Generate private keys
-  community.crypto.openssl_privatekey:
+- name: Check for already existing private keys
+  ansible.builtin.stat:
     path: '{{ cert.path }}.key'
-    passphrase: '{{ cert.password | default(omit) }}'
-    cipher: '{{ cert.cipher | default(omit) }}'
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+  register: file_check
+
+- name: Generate private keys
+  community.crypto.openssl_privatekey:
+    path: '{{ result.cert.path }}.key'
+    passphrase: '{{ result.cert.password | default(omit) }}'
+    cipher: '{{ result.cert.cipher | default(omit) }}'
+  loop: '{{ file_check.results | default([]) }}'
+  loop_control:
+    loop_var: result
+  when: not result.stat.exists
 
 - name: Generate certificate signing requests
   community.crypto.openssl_csr:
@@ -34,11 +43,15 @@
     locality_name: '{{ cert.locality | default(omit) }}'
     organization_name: '{{ cert.organization | default(omit) }}'
     organizational_unit_name: '{{ cert.organization_unit | default(omit) }}'
-    email_address: '{{ cert.email | default(omit) }}'
+    email_address: '{{ cert.email_address | default(omit) }}'
     subject_alt_name: '{{ cert.subject_alt_name | default(omit) }}'
     basic_constraints: '{{ cert.basic_constraints | default(omit) }}'
     # we at least need a common name
     common_name: '{{ cert.common_name }}'
+    # smime
+    key_usage: '{{ cert.key_usage | default(omit) }}'
+    key_usage_critical: '{{ cert.key_usage_critical | default(omit) }}'
+    extended_key_usage: '{{ cert.extended_key_usage | default(omit) }}'
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
@@ -101,6 +114,8 @@
     path: '{{ cert.path }}.p12'
     friendly_name: '{{ cert.name }}'
     privatekey_path: '{{ cert.path }}.key'
+    privatekey_passphrase: '{{ cert.password | default(omit) }}'
+    passphrase: '{{ cert.password | default(omit) }}'
     certificate_path: '{{ cert.path }}.crt'
     state: present
   loop: '{{ _certificates | default([]) }}'

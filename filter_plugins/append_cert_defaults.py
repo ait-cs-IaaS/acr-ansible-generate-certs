@@ -9,8 +9,6 @@ class FilterModule(object):
 
     def append_cert_defaults(self, certs, base_path, ca, **kwargs):
 
-        print(certs)
-
         _certs = []
 
         for cert in certs:
@@ -54,11 +52,13 @@ class FilterModule(object):
                     (cert.get("name")).lower(),
                 ]
                 cert["path"] = "/".join(_path)
+                cert["privatekey_passphrase"] = cert.get("password", None)
 
                 _full_email = f"{cert.get('name')}@{cert.get('domain')}"
                 cert["common_name"] = _full_email
                 cert["email_address"] = _full_email
                 cert["subject_alt_name"] = [f"email:{_full_email}"]
+                cert["cipher"] = "auto"
                 cert["key_usage"] = [
                     "dataEncipherment",
                     "keyEncipherment",
