@@ -1,17 +1,16 @@
 ---
 # List of certificate information as dicts
 certificates: []
-
 # Path to certs data-dir (destination)
-ca_base_path: ''
+ca_base_path: ""
 
 # Password for signing CA
-ca_pw: ''
+ca_pw: ""
 
 # Path to local CA certificate
-ca_cert: ''
+ca_cert: ""
 
 # Path to local CA private key
-ca_key: ''
+ca_key: ""
 
-ca_check_valid_till: '+8w'
+ca_check_valid_till: +8w

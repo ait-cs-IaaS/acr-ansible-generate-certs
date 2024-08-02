@@ -5,6 +5,43 @@
       "{{ certificates | append_cert_defaults(ca_base_path, {'pw': ca_pw, 'key':
       ca_key, 'cert': ca_cert}) }}"
 
+- name: Check for already existing certificates
+  ansible.builtin.stat:
+    path: '{{ cert.path }}.crt'
+  loop: '{{ _certificates | default([]) }}'
+  loop_control:
+    loop_var: cert
+  register: file_check
+
+- name: Check state of currently existing certificates
+  community.crypto.x509_certificate_info:
+    path: '{{ fcheck.cert.path }}.crt'
+    valid_at:
+      check: '{{ ca_check_valid_till }}'
+  loop: '{{ file_check.results }}'
+  loop_control:
+    loop_var: fcheck
+  register: certificate_check
+  when: fcheck.stat.exists
+  no_log: true
+
+- name: Delete about to expire certificate
+  ansible.builtin.file:
+    name: '{{ validity_check.cert.path }}.crt'
+    state: absent
+  loop: '{{ certificate_check.results }}'
+  loop_control:
+    loop_var: validity_check
+  when:
+    not (validity_check.skipped is defined and validity_check.skipped) and not
+    validity_check.valid_at.check
+  no_log: true
+
+- name: Display filtered certificates
+  ansible.builtin.set_fact:
+    _certificates:
+      '{{ certificate_check.results | remove_present_and_expired() }}'
+
 - name: Create certificate directories
   ansible.builtin.file:
     name: '{{ cert.path | dirname }}'
@@ -13,6 +50,7 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+  no_log: true
 
 - name: Check for already existing private keys
   ansible.builtin.stat:
@@ -20,9 +58,12 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+  no_log: true
   register: file_check
 
 - name: Generate private keys
+  async: 3600
+  poll: 0
   community.crypto.openssl_privatekey:
     path: '{{ result.cert.path }}.key'
     passphrase: '{{ result.cert.password | default(omit) }}'
@@ -30,9 +71,12 @@
   loop: '{{ file_check.results | default([]) }}'
   loop_control:
     loop_var: result
+  no_log: true
   when: not result.stat.exists
 
 - name: Generate certificate signing requests
+  async: 3600
+  poll: 0
   community.crypto.openssl_csr:
     use_common_name_for_san: true
     path: '{{ cert.path }}.csr'
@@ -56,37 +100,9 @@
   loop_control:
     loop_var: cert
 
-- name: Check for already existing certificates
-  ansible.builtin.stat:
-    path: '{{ cert.path }}.crt'
-  loop: '{{ _certificates | default([]) }}'
-  loop_control:
-    loop_var: cert
-  register: file_check
-
-- name: Check state of currently existing certificates
-  community.crypto.x509_certificate_info:
-    path: '{{ fcheck.cert.path }}.crt'
-    valid_at:
-      check: '{{ ca_check_valid_till }}'
-  loop: '{{ file_check.results }}'
-  loop_control:
-    loop_var: fcheck
-  register: certificate_check
-  when: fcheck.stat.exists
-
-- name: Delete about to expire certificate
-  when:
-    not (validity_check.skipped is defined and validity_check.skipped) and not
-    validity_check.valid_at.check
-  ansible.builtin.file:
-    name: '{{ cert.path }}.crt'
-    state: absent
-  loop: '{{ certificate_check.results }}'
-  loop_control:
-    loop_var: validity_check
-
 - name: Sign certificate
+  async: 3600
+  poll: 0
   community.crypto.x509_certificate:
     path: '{{ cert.path }}.crt'
     csr_path: '{{ cert.path }}.csr'
@@ -108,7 +124,8 @@
     loop_var: cert
 
 - name: Create PKCS#12 version for thunderbird/firefox
-  when: cert.cert_type == "smime"
+  async: 3600
+  poll: 0
   community.crypto.openssl_pkcs12:
     action: export
     path: '{{ cert.path }}.p12'
@@ -121,3 +138,4 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+  when: cert.cert_type == "smime"

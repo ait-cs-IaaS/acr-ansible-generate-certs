@@ -5,6 +5,7 @@ class FilterModule(object):
     def filters(self):
         return {
             "append_cert_defaults": self.append_cert_defaults,
+            "remove_present_and_expired": self.remove_present_and_expired,
         }
 
     def append_cert_defaults(self, certs, base_path, ca, **kwargs):
@@ -19,6 +20,7 @@ class FilterModule(object):
                 _path = [base_path, "ca"]
                 cert["path"] = "/".join(_path)
 
+                cert["email_address"] = cert.get("email", None)
                 cert["basic_constraints"] = ["CA:TRUE"]
                 cert["cipher"] = "auto"
                 cert["selfsigned_not_before"] = cert.get("valid_from", None)
@@ -79,3 +81,10 @@ class FilterModule(object):
             _certs.append(cert)
 
         return _certs
+
+    def remove_present_and_expired(self, check_results):
+        return [
+            check_result.get("fcheck", {}).get("cert", {})
+            for check_result in check_results
+            if check_result.get("expired", True)
+        ]
