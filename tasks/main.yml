@@ -11,6 +11,7 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+    label: '{{ cert.path }}'
   register: file_check
 
 - name: Check state of currently existing certificates
@@ -21,9 +22,9 @@
   loop: '{{ file_check.results }}'
   loop_control:
     loop_var: fcheck
+    label: '{{ fcheck.cert.path }}'
   register: certificate_check
   when: fcheck.stat.exists
-  no_log: true
 
 - name: Delete about to expire certificate
   ansible.builtin.file:
@@ -32,10 +33,12 @@
   loop: '{{ certificate_check.results }}'
   loop_control:
     loop_var: validity_check
+    label:
+      '{{ validity_check.fcheck.stat.path |
+      default(validity_check.fcheck.cert.path) | default(validity_check) }}'
   when:
     not (validity_check.skipped is defined and validity_check.skipped) and not
     validity_check.valid_at.check
-  no_log: true
 
 - name: Display filtered certificates
   ansible.builtin.set_fact:
@@ -50,7 +53,7 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
-  no_log: true
+    label: '{{ cert.path }}'
 
 - name: Check for already existing private keys
   ansible.builtin.stat:
@@ -58,7 +61,7 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
-  no_log: true
+    label: '{{ cert.path }}'
   register: file_check
 
 - name: Generate private keys
@@ -71,8 +74,23 @@
   loop: '{{ file_check.results | default([]) }}'
   loop_control:
     loop_var: result
-  no_log: true
+    label: '{{ result.cert.path }}.key'
   when: not result.stat.exists
+  register: key_gen_tasks
+  ignore_errors: true
+
+- name: Wait for private keys to be generated
+  async_status:
+    jid: '{{ item.ansible_job_id }}'
+  register: key_gen_results
+  until: key_gen_results.finished
+  retries: 30
+  delay: 2
+  loop: '{{ key_gen_tasks.results }}'
+  loop_control:
+    label: '{{ item.ansible_job_id }}'
+  when: key_gen_tasks is defined and key_gen_tasks.results is defined
+  ignore_errors: true
 
 - name: Generate certificate signing requests
   async: 3600
@@ -99,6 +117,22 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+    label: '{{ cert.path }}'
+  register: csr_gen_tasks
+  ignore_errors: true
+
+- name: Wait for CSRs to be generated
+  async_status:
+    jid: '{{ item.ansible_job_id }}'
+  register: csr_gen_results
+  until: csr_gen_results.finished
+  retries: 30
+  delay: 2
+  loop: '{{ csr_gen_tasks.results }}'
+  loop_control:
+    label: '{{ item.ansible_job_id }}'
+  when: csr_gen_tasks is defined and csr_gen_tasks.results is defined
+  ignore_errors: true
 
 - name: Sign certificate
   async: 3600
@@ -122,6 +156,22 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+    label: '{{ cert.path }}'
+  register: sign_cert_tasks
+  ignore_errors: true
+
+- name: Wait for certificates to be signed
+  async_status:
+    jid: '{{ item.ansible_job_id }}'
+  register: sign_cert_results
+  until: sign_cert_results.finished
+  retries: 30
+  delay: 2
+  loop: '{{ sign_cert_tasks.results }}'
+  loop_control:
+    label: '{{ item.ansible_job_id }}'
+  when: sign_cert_tasks is defined and sign_cert_tasks.results is defined
+  ignore_errors: true
 
 - name: Create PKCS#12 version for thunderbird/firefox
   async: 3600
@@ -138,4 +188,20 @@
   loop: '{{ _certificates | default([]) }}'
   loop_control:
     loop_var: cert
+    label: '{{ cert.path }}'
   when: cert.cert_type == "smime"
+  register: pkcs12_gen_tasks
+  ignore_errors: true
+
+- name: Wait for PKCS#12 files to be created
+  async_status:
+    jid: '{{ item.ansible_job_id }}'
+  register: pkcs12_gen_results
+  until: pkcs12_gen_results.finished
+  retries: 30
+  delay: 2
+  loop: '{{ pkcs12_gen_tasks.results }}'
+  loop_control:
+    label: '{{ item.ansible_job_id }}'
+  when: pkcs12_gen_tasks is defined and pkcs12_gen_tasks.results is defined
+  ignore_errors: true
